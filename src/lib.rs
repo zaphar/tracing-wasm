@@ -17,14 +17,31 @@ extern "C" {
     fn mark(a: &str);
     #[wasm_bindgen(catch, js_namespace = performance)]
     fn measure(name: String, startMark: String) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(js_namespace = console, js_name = error)]
+    fn error(message: String);
+    #[wasm_bindgen(js_namespace = console, js_name = error)]
+    fn error4(message1: String, message2: &str, message3: &str, message4: &str);
+
+    #[wasm_bindgen(js_namespace = console, js_name = warn)]
+    fn warn(message: String);
+    #[wasm_bindgen(js_namespace = console, js_name = warn)]
+    fn warn4(message1: String, message2: &str, message3: &str, message4: &str);
+
     #[wasm_bindgen(js_namespace = console, js_name = log)]
     fn log1(message: String);
     #[wasm_bindgen(js_namespace = console, js_name = log)]
-    fn log2(message1: &str, message2: &str);
-    #[wasm_bindgen(js_namespace = console, js_name = log)]
-    fn log3(message1: &str, message2: &str, message3: &str);
-    #[wasm_bindgen(js_namespace = console, js_name = log)]
     fn log4(message1: String, message2: &str, message3: &str, message4: &str);
+
+    #[wasm_bindgen(js_namespace = console, js_name = debug)]
+    fn debug(message: String);
+    #[wasm_bindgen(js_namespace = console, js_name = debug)]
+    fn debug4(message1: String, message2: &str, message3: &str, message4: &str);
+
+    #[wasm_bindgen(js_namespace = console, js_name = trace)]
+    fn trace(message: String);
+    #[wasm_bindgen(js_namespace = console, js_name = trace)]
+    fn trace4(message1: String, message2: &str, message3: &str, message4: &str);
 }
 
 #[cfg(test)]
@@ -43,6 +60,7 @@ mod test {
                 report_logs_in_timings: true,
                 report_logs_in_console: true,
                 use_console_color: true,
+                use_console_log_types: false,
                 max_level: tracing::Level::TRACE,
             }
         )
@@ -124,6 +142,8 @@ pub struct WASMLayerConfigBuilder {
     report_logs_in_console: bool,
     /// Only relevant if report_logs_in_console is true, this will use color style strings in the console.
     use_console_color: bool,
+    /// Only relevant if report_logs_in_console is true, this will use color style strings in the console.
+    use_console_log_types: bool,
     /// Log events will be reported from this level -- Default is ALL (TRACE)
     max_level: tracing::Level,
 }
@@ -171,12 +191,21 @@ impl WASMLayerConfigBuilder {
         self
     }
 
+    pub fn set_use_console_log_types(
+        &mut self,
+        use_console_log_types: bool,
+    ) -> &mut WASMLayerConfigBuilder {
+        self.use_console_log_types = use_console_log_types;
+        self
+    }
+
     /// Build the WASMLayerConfig
     pub fn build(&self) -> WASMLayerConfig {
         WASMLayerConfig {
             report_logs_in_timings: self.report_logs_in_timings,
             report_logs_in_console: self.report_logs_in_console,
             use_console_color: self.use_console_color,
+            use_console_log_types: self.use_console_log_types,
             max_level: self.max_level,
         }
     }
@@ -188,6 +217,7 @@ impl Default for WASMLayerConfigBuilder {
             report_logs_in_timings: true,
             report_logs_in_console: true,
             use_console_color: true,
+            use_console_log_types: false,
             max_level: tracing::Level::TRACE,
         }
     }
@@ -197,6 +227,7 @@ impl Default for WASMLayerConfigBuilder {
 pub struct WASMLayerConfig {
     report_logs_in_timings: bool,
     report_logs_in_console: bool,
+    use_console_log_types: bool,
     use_console_color: bool,
     max_level: tracing::Level,
 }
@@ -206,6 +237,7 @@ impl core::default::Default for WASMLayerConfig {
         WASMLayerConfig {
             report_logs_in_timings: true,
             report_logs_in_console: true,
+            use_console_log_types: false,
             use_console_color: true,
             max_level: tracing::Level::TRACE,
         }
@@ -307,8 +339,15 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for WASMLayer {
                     .and_then(|file| meta.line().map(|ln| format!("{}:{}", file, ln)))
                     .unwrap_or_default();
 
+                let f_pair: (fn(String), fn(String, &str, &str, &str)) = match *level {
+                    tracing::Level::TRACE => (trace, trace4),
+                    tracing::Level::DEBUG => (debug, debug4),
+                    tracing::Level::INFO => (log1, log4),
+                    tracing::Level::WARN => (warn, warn4),
+                    tracing::Level::ERROR => (error, error4),
+                };
                 if self.config.use_console_color {
-                    log4(
+                    f_pair.1(
                         format!(
                             "%c{}%c {}{}%c{}",
                             level,
@@ -327,7 +366,7 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for WASMLayer {
                         "color: inherit",
                     );
                 } else {
-                    log1(format!(
+                    f_pair.0(format!(
                         "{} {}{} {}",
                         level,
                         origin,
